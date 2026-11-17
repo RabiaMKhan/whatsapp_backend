@@ -2,11 +2,10 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
-import { pinoHttp } from 'pino-http';
 import { env } from './config/env';
 import { isDatabaseUp } from './db/connect';
-import { logger } from './lib/logger';
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
+import { requestLogger } from './middleware/request-logger';
 import { requireAuth } from './middleware/require-auth';
 import { authRouter } from './modules/auth/auth.routes';
 import { conversationsRouter } from './modules/conversations/conversations.routes';
@@ -19,11 +18,12 @@ export function createApp() {
   // Behind a proxy (Render, Railway, Nginx) this makes req.ip the real client IP.
   if (env.TRUST_PROXY > 0) app.set('trust proxy', env.TRUST_PROXY);
 
+  // First, so every request is logged, even ones the JSON parser rejects (400/413).
+  app.use(requestLogger);
   app.use(helmet());
   app.use(cors({ origin: env.CLIENT_ORIGINS, credentials: true }));
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
-  app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === '/health' } }));
 
   app.get('/health', (_req, res) => {
     const db = isDatabaseUp();
