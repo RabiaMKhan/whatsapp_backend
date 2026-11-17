@@ -1,0 +1,161 @@
+# WhatsApp Backend: Relay chat API
+
+Real-time chat API: **Express 5 + Socket.io 4 + MongoDB** in TypeScript, with email-verified sign-up (6-digit codes), rotating refresh tokens, conversations, messages, typing, presence and read receipts. The web app is in [whatsapp_frontend](https://github.com/RabiaMKhan/whatsapp_frontend).
+
+## Stack
+
+Express 5, Socket.io 4, Mongoose 9, Zod 4, jose (JWT), bcryptjs, nodemailer, helmet, express-rate-limit, pino. Tests: Vitest + Supertest + socket.io-client against a real MongoDB test database.
+
+## Project structure
+
+```
+src/
+  config/env.ts      Zod-validated env vars (the app exits if one is wrong)
+  models/            User, Session, AuthCode, Conversation, Message
+  modules/           auth · users · conversations · messages (routes + services)
+  socket/            handshake auth, event handlers, rate limiter
+  realtime/          rooms, broadcast helpers, online presence
+  middleware/        requireAuth, CSRF header, rate limits, error handler
+  lib/               tokens, mailer, email templates, serializers
+  app.ts / server.ts Express app; one HTTP server for Express + Socket.io
+scripts/seed.ts      demo users + chats
+test/                auth, API and socket integration tests
+packages/shared/     types + Zod schemas shared with the frontend
+```
+
+## Getting started
+
+Requirements: Node 22+ and MongoDB running locally.
+
+```bash
+npm install
+```
+
+```bash
+cp .env.example .env      # then set JWT_ACCESS_SECRET
+```
+
+```bash
+npm run seed              # demo users + chats (wipes the chat_app database)
+```
+
+```bash
+npm run dev               # http://localhost:4000
+```
+
+Seeded users are verified; their password is `SEED_PASSWORD` in `scripts/seed.ts`. With `SMTP_HOST` empty, emails are not sent: the server prints each one (with the code) in its console.
+
+| Script | What it does |
+| --- | --- |
+| `npm run dev` | Dev server with reload (tsx) |
+| `npm test` | Integration tests (uses the `chat_app_test` database) |
+| `npm run typecheck` | `tsc` for the server and the shared package |
+| `npm run build` / `npm start` | Bundle with tsup / run the bundle |
+| `npm run seed` | Reset the local DB with demo data |
+
+## Environment variables
+
+`.env` (copy from `.env.example`):
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `MONGODB_URI` | (required) | e.g. `mongodb://127.0.0.1:27017/chat_app` |
+| `JWT_ACCESS_SECRET` | (required) | 32+ random characters |
+| `CLIENT_ORIGINS` | `http://localhost:3005` | CORS allowlist, comma-separated |
+| `ACCESS_TOKEN_TTL` | `15m` | Access token lifetime |
+| `REFRESH_TOKEN_TTL_DAYS` | `30` | Refresh cookie lifetime |
+| `COOKIE_SAMESITE` | `lax` | Use `none` (with HTTPS) only if web and API are on different sites |
+| `TRUST_PROXY` | `0` | Set to `1` behind Render/Railway/Nginx |
+| `PORT` / `LOG_LEVEL` | `4000` / `info` | |
+| `APP_URL` | `http://localhost:3005` | Frontend URL, used for links in emails |
+| `SMTP_HOST` | (empty) | Empty → emails are printed in the console (dev). **Required in production** |
+| `SMTP_PORT` / `SMTP_SECURE` | `587` / `false` | Use `465` / `true` for SSL |
+| `SMTP_USER` / `SMTP_PASS` | (empty) | e.g. Gmail address + app password, or Mailtrap/Resend/Brevo SMTP keys |
+| `EMAIL_FROM` | `Relay <no-reply@relay.local>` | Sender shown in the inbox |
+
+## How auth works
+
+**Account flow** (the same 6-digit-code approach as the blog app, finished and hardened):
+
+```
+register ──► email with 6-digit code ──► verify-email ──► signed in
+                  ▲                            │
+       resend-verification            login before verifying → 403 EMAIL_NOT_VERIFIED
+       (60 s cooldown)                (and a new code is sent)
+
+forgot-password ──► email with code ──► reset-password ──► signed out on every device
+```
+
+| Rule | Detail |
+| --- | --- |
+| Codes | 6 digits from `crypto.randomInt`, valid 10 min, one active code per user + purpose, deleted once used |
+| Stored safely | Only an HMAC of the code (keyed by a server secret) is saved, never the code |
+| Guessing | 5 wrong attempts and the code is locked; attempts are counted atomically (parallel guesses still count). Plus a per-IP rate limit |
+| Resend | 60 s cooldown; the UI shows a countdown |
+| No account probing | Unknown emails get the same answer on resend / forgot / reset. Login only says "not verified" after the password was right |
+| Unverified sign-ups | A new sign-up with the same unverified email replaces the old one (stops "reserving" someone else's email). Unverified accounts can't be found in people search or added to chats |
+| Reset password | Sets the new password, marks the email verified, ends every session, emails a "password changed" notice |
+| Email HTML | Inline-styled templates; user names are HTML-escaped |
+
+**Sessions:**
+
+| Step | What happens |
+| --- | --- |
+| Verify / login | API returns an **access token** (JWT, 15 min, kept only in memory) and sets an **httpOnly refresh cookie** (`rt`, path `/api/auth`) |
+| API calls | `Authorization: Bearer <access token>`. On a 401, the axios client calls `/auth/refresh` once and retries |
+| Socket.io | Token goes in the handshake (`auth: { token }`). If it is rejected (`UNAUTHORIZED`), the client refreshes and reconnects |
+| Refresh | Cookie = `<sessionId>.<secret>`. The DB keeps only a SHA-256 hash. **Rotated on every refresh**. Reusing an old token ends the session (a 30 s grace window covers two tabs refreshing at once) |
+| Page load | `/auth/refresh` restores the session from the cookie |
+| Logout | Deletes the session and clears the cookie, then a full page reload wipes in-memory state |
+| CSRF | Cookie routes need `X-Requested-With: XMLHttpRequest`, plus SameSite and the CORS allowlist |
+
+**Frontend pages:** `/register` → `/verify-email` (6-box code input, auto-submits, resend countdown) · `/login` (unverified → sent to `/verify-email`) · `/forgot-password` → `/reset-password`. The pending email is kept in `sessionStorage`, never in the URL.
+
+## REST API (`/api`)
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| POST | `/auth/register` | Creates an unverified account, emails a code. No session |
+| POST | `/auth/verify-email` | `{ email, code }` → signed in (access token + cookie) |
+| POST | `/auth/resend-verification` | `{ email }`, 60 s cooldown |
+| POST | `/auth/login` | 403 `EMAIL_NOT_VERIFIED` if not verified yet |
+| POST | `/auth/forgot-password` · `/auth/reset-password` | Code by email → `{ email, code, password }` |
+| POST | `/auth/refresh` · `/auth/logout` | Cookie + CSRF header |
+| GET | `/auth/me` | Current user |
+| GET | `/users?search=` | People to chat with (never includes you) |
+| GET | `/conversations` | Your chats, newest first, with `unreadCount` |
+| POST | `/conversations` | `{ type: 'direct', userId }` or `{ type: 'group', name, memberIds }`. Direct chats are unique per pair |
+| GET | `/conversations/:id` | 404 if you are not a member |
+| GET | `/conversations/:id/messages?before=&limit=` | Cursor pages, oldest first, `nextCursor` |
+| POST | `/conversations/:id/messages` | REST fallback for sending (`{ body, clientId }`) |
+| POST | `/conversations/:id/read` | Mark as read |
+| GET | `/health` | `{ status, db }` |
+
+Errors always look like `{ "error": { "code": "VALIDATION_ERROR", "message": "...", "details": [...] } }`.
+
+## Socket.io events
+
+Typed in `packages/shared/src/types/socket.ts`, so a wrong event name or payload fails to compile on both sides.
+
+| Direction | Event | Payload |
+| --- | --- | --- |
+| client → server | `message:send` | `{ conversationId, body, clientId }` + ack `{ ok, data: Message }` |
+| client → server | `conversation:read` | `{ conversationId }` + ack |
+| client → server | `typing:start` / `typing:stop` | `{ conversationId }` (resend start every ~3 s while typing) |
+| server → client | `message:new` | `Message` (to the whole room, sender's other tabs included) |
+| server → client | `conversation:new` | `Conversation` (someone started a chat with you) |
+| server → client | `conversation:read` | `{ conversationId, userId, lastReadAt }` |
+| server → client | `typing:update` | `{ conversationId, userId, isTyping }` |
+| server → client | `presence:snapshot` / `presence:update` | online user ids / `{ userId, online, lastSeenAt }` |
+
+**Rooms:** `user:<id>` (all of a user's tabs) and `conversation:<id>`. Sockets join their conversation rooms on connect; new chats join live.
+**Reliability:** `clientId` makes sends idempotent (a retry never creates a duplicate), every payload is checked with Zod, and each socket has a rate limit.
+
+## Shared types (`packages/shared`)
+
+Zod schemas, API response types and the typed Socket.io event contract. **The same folder lives in both `whatsapp_backend` and `whatsapp_frontend`.** When you change it in one repo, copy the change to the other so both sides keep the same contract. (Later this can become a published npm package or a git submodule.)
+
+## Scaling notes
+
+- Presence is kept in memory, so this setup is for **one server process**. To run more, add `@socket.io/redis-adapter` and keep presence in Redis.
+- The conversation preview is updated after the message insert with no transaction (a standalone MongoDB has none). Use a replica set if you need it atomic.
