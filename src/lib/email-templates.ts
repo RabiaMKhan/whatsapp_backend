@@ -64,6 +64,7 @@ const paragraph = (text: string) => `<p style="margin:0 0 12px;font-size:14px;li
 export function verificationEmail({ to, name, code }: { to: string; name: string; code: string }): EmailMessage {
   const greeting = `Hi ${escapeHtml(firstName(name))},`;
   return {
+    kind: 'verify-email',
     to,
     subject: `${code} is your ${APP_NAME} verification code`,
     text: `Hi ${firstName(name)},\n\nYour ${APP_NAME} verification code is: ${code}\n\nIt expires in ${AUTH_CODE.TTL_MINUTES} minutes. If you didn't create an account, ignore this email.`,
@@ -81,6 +82,7 @@ export function verificationEmail({ to, name, code }: { to: string; name: string
 export function resetPasswordEmail({ to, name, code }: { to: string; name: string; code: string }): EmailMessage {
   const greeting = `Hi ${escapeHtml(firstName(name))},`;
   return {
+    kind: 'reset-password',
     to,
     subject: `${code} is your ${APP_NAME} password reset code`,
     text: `Hi ${firstName(name)},\n\nUse this code to reset your ${APP_NAME} password: ${code}\n\nIt expires in ${AUTH_CODE.TTL_MINUTES} minutes. If you didn't ask for this, ignore this email; your password stays the same.`,
@@ -99,6 +101,7 @@ export function passwordChangedEmail({ to, name }: { to: string; name: string })
   const greeting = `Hi ${escapeHtml(firstName(name))},`;
   const loginUrl = `${env.APP_URL}/login`;
   return {
+    kind: 'password-changed',
     to,
     subject: `Your ${APP_NAME} password was changed`,
     text: `Hi ${firstName(name)},\n\nYour ${APP_NAME} password was just changed and you were signed out on all devices.\n\nIf this was you, sign in again: ${loginUrl}\nIf it wasn't, reset your password right away.`,
