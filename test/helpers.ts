@@ -7,6 +7,7 @@ import { connectDatabase, disconnectDatabase } from '../src/db/connect';
 import { testOutbox } from '../src/lib/mailer';
 import { AuthCode } from '../src/models/auth-code.model';
 import { Conversation } from '../src/models/conversation.model';
+import { Invite } from '../src/models/invite.model';
 import { Message } from '../src/models/message.model';
 import { Session } from '../src/models/session.model';
 import { User } from '../src/models/user.model';
@@ -18,7 +19,7 @@ export type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 export async function startTestServer() {
   await connectDatabase();
   await mongoose.connection.dropDatabase();
-  await Promise.all([User.init(), Session.init(), AuthCode.init(), Conversation.init(), Message.init()]);
+  await Promise.all([User.init(), Session.init(), AuthCode.init(), Conversation.init(), Message.init(), Invite.init()]);
 
   const { httpServer, io } = createServer();
   await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve));

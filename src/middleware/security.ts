@@ -30,6 +30,16 @@ export const codeRateLimit = rateLimit({
   handler: (_req, _res, next) => next(rateLimited()),
 });
 
+/** Invites send email to people who never signed up, so keep a tight cap per IP. */
+export const inviteRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: isProd ? 30 : 500,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  skip: () => isTest,
+  handler: (_req, _res, next) => next(rateLimited()),
+});
+
 export const refreshRateLimit = rateLimit({
   windowMs: 60 * 1000,
   limit: 60,

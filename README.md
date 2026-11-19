@@ -129,7 +129,11 @@ forgot-password ──► email with code ──► reset-password ──► sig
 | GET | `/conversations/:id/messages?before=&limit=` | Cursor pages, oldest first, `nextCursor` |
 | POST | `/conversations/:id/messages` | REST fallback for sending (`{ body, clientId }`) |
 | POST | `/conversations/:id/read` | Mark as read |
+| POST | `/invites` | `{ email }` → emails a sign-up link (201 `{ status: 'sent' }`). Already a member → no email, 200 `{ status: 'already_member', user }`. Same email again: 1 h cooldown; max 20 invites a day |
+| GET | `/invites` | Invites you sent, with `pending` / `joined` |
 | GET | `/health` | `{ status, db }` |
+
+**Invites:** the email links to `/register?email=…`. When that address is verified on a new account, every pending invite to it becomes `joined` and a direct chat with each inviter is created (they get it live over `conversation:new`). No token is needed: verifying the email proves the invite reached its owner.
 
 Errors always look like `{ "error": { "code": "VALIDATION_ERROR", "message": "...", "details": [...] } }`.
 

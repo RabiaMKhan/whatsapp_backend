@@ -9,6 +9,7 @@ import { requestLogger } from './middleware/request-logger';
 import { requireAuth } from './middleware/require-auth';
 import { authRouter } from './modules/auth/auth.routes';
 import { conversationsRouter } from './modules/conversations/conversations.routes';
+import { invitesRouter } from './modules/invites/invites.routes';
 import { usersRouter } from './modules/users/users.routes';
 
 export function createApp() {
@@ -33,6 +34,7 @@ export function createApp() {
   app.use('/api/auth', authRouter);
   app.use('/api/users', requireAuth, usersRouter);
   app.use('/api/conversations', requireAuth, conversationsRouter);
+  app.use('/api/invites', requireAuth, invitesRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

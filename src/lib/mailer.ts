@@ -3,7 +3,7 @@ import { env, isTest } from '../config/env';
 import { logger } from './logger';
 
 /** What the email is for. Safe to log, unlike the subject (which can hold a code). */
-export type EmailKind = 'verify-email' | 'reset-password' | 'password-changed';
+export type EmailKind = 'verify-email' | 'reset-password' | 'password-changed' | 'invite';
 
 export interface EmailMessage {
   kind: EmailKind;

@@ -20,7 +20,10 @@ function escapeHtml(value: string): string {
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? name;
 
-function layout({ preheader, body }: { preheader: string; body: string }): string {
+const DEFAULT_FOOTER = `You received this email because of activity on your ${APP_NAME} account.
+                If this wasn't you, you can safely ignore it.`;
+
+function layout({ preheader, body, footer = DEFAULT_FOOTER }: { preheader: string; body: string; footer?: string }): string {
   return `<!doctype html>
 <html>
   <body style="margin:0;padding:0;background:#f4f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1f2330;">
@@ -42,8 +45,7 @@ function layout({ preheader, body }: { preheader: string; body: string }): strin
             </tr>
             <tr>
               <td style="padding:20px 4px 0;font-size:12px;line-height:18px;color:#7a8094;">
-                You received this email because of activity on your ${APP_NAME} account.
-                If this wasn't you, you can safely ignore it.
+                ${footer}
               </td>
             </tr>
           </table>
@@ -112,6 +114,28 @@ export function passwordChangedEmail({ to, name }: { to: string; name: string })
         ${paragraph('Your password was just changed, and you were signed out on all devices.')}
         <p style="margin:24px 0;"><a href="${escapeHtml(loginUrl)}" style="display:inline-block;padding:10px 18px;border-radius:8px;background:${BRAND};color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;">Sign in</a></p>
         ${paragraph("If this wasn't you, reset your password right away.")}`,
+    }),
+  };
+}
+
+const button = (href: string, label: string) =>
+  `<p style="margin:24px 0;"><a href="${escapeHtml(href)}" style="display:inline-block;padding:10px 18px;border-radius:8px;background:${BRAND};color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;">${escapeHtml(label)}</a></p>`;
+
+/** Sent to someone without an account. The inviter's name is user input: escape it. */
+export function inviteEmail({ to, inviterName, joinUrl }: { to: string; inviterName: string; joinUrl: string }): EmailMessage {
+  const name = inviterName.trim();
+  return {
+    kind: 'invite',
+    to,
+    subject: `${name} invited you to chat on ${APP_NAME}`,
+    text: `Hi,\n\n${name} invited you to join ${APP_NAME}, a place to message your team in real time.\n\nCreate your free account here: ${joinUrl}\n\nOnce you sign up, a chat with ${name} will be waiting for you. If you don't know ${name}, you can ignore this email.`,
+    html: layout({
+      preheader: `${name} invited you to chat on ${APP_NAME}`,
+      body: `${heading(`${escapeHtml(name)} invited you to ${APP_NAME}`)}
+        ${paragraph(`${escapeHtml(name)} wants to message you on ${APP_NAME}, a place to chat with your team in real time.`)}
+        ${button(joinUrl, `Join ${APP_NAME}`)}
+        ${paragraph(`Once you sign up with <strong>${escapeHtml(to)}</strong>, a chat with ${escapeHtml(firstName(name))} will be waiting for you.`)}`,
+      footer: `You received this email because ${escapeHtml(name)} entered your address on ${APP_NAME}. If you don't know them, you can safely ignore it; you won't get more emails unless someone invites you again.`,
     }),
   };
 }
