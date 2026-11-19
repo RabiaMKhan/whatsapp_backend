@@ -10,6 +10,12 @@ export const logger = pino({
       ? undefined
       : {
           target: 'pino-pretty',
-          options: { colorize: true, translateTime: 'SYS:HH:MM:ss', ignore: 'pid,hostname' },
+          // Request details are already in the message (see request-logger.ts), so the
+          // pretty dev output hides them. Production JSON logs keep every field.
+          options: {
+            colorize: true,
+            translateTime: 'SYS:HH:MM:ss',
+            ignore: 'pid,hostname,req,res,responseTime,reqId',
+          },
         },
 });

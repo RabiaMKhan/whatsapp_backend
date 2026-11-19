@@ -15,6 +15,8 @@ import { unauthorized } from '../../lib/http-error';
 import { parse } from '../../lib/parse';
 import { getAuth, requireAuth } from '../../middleware/require-auth';
 import { authRateLimit, codeRateLimit, refreshRateLimit, requireCsrfHeader } from '../../middleware/security';
+import { realtime } from '../../realtime/io';
+import { acceptInvites } from '../invites/invites.service';
 import { getUserById } from '../users/users.service';
 import * as authService from './auth.service';
 
@@ -63,6 +65,9 @@ authRouter.post('/register', authRateLimit, async (req, res) => {
 authRouter.post('/verify-email', codeRateLimit, async (req, res) => {
   const input = parse(verifyEmailSchema, req.body);
   const result = await authService.verifyEmail(input, sessionMeta(req));
+  // Invited by someone? Start a chat with each inviter (it appears for them live).
+  const invitedChats = await acceptInvites(result.user);
+  invitedChats.forEach((conversation) => realtime.conversationCreated(conversation));
   setRefreshCookie(res, result);
   res.json(authBody(result));
 });
