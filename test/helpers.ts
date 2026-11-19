@@ -1,7 +1,6 @@
 import type { AddressInfo } from 'node:net';
-import type { AuthResponse, ClientToServerEvents, ServerToClientEvents } from '@chat/shared';
+import { userChannel, type AuthResponse, type RealtimeEventName } from '@chat/shared';
 import mongoose from 'mongoose';
-import { io as connectClient, type Socket } from 'socket.io-client';
 import request from 'supertest';
 import { connectDatabase, disconnectDatabase } from '../src/db/connect';
 import { testOutbox } from '../src/lib/mailer';
@@ -11,24 +10,23 @@ import { Invite } from '../src/models/invite.model';
 import { Message } from '../src/models/message.model';
 import { Session } from '../src/models/session.model';
 import { User } from '../src/models/user.model';
+import { testRealtimeOutbox, type PublishedEvent } from '../src/realtime/publisher';
 import { createServer } from '../src/server';
 
-export type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
-
-/** Fresh test database + a real HTTP/Socket.io server on a random port. */
+/** Fresh test database + a real HTTP server on a random port. */
 export async function startTestServer() {
   await connectDatabase();
   await mongoose.connection.dropDatabase();
   await Promise.all([User.init(), Session.init(), AuthCode.init(), Conversation.init(), Message.init(), Invite.init()]);
 
-  const { httpServer, io } = createServer();
+  const { httpServer } = createServer();
   await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
   const { port } = httpServer.address() as AddressInfo;
 
   return {
     baseUrl: `http://127.0.0.1:${port}`,
     async stop() {
-      await io.close();
+      await new Promise<void>((resolve) => httpServer.close(() => resolve()));
       await disconnectDatabase();
     },
   };
@@ -75,52 +73,21 @@ export async function registerUser(baseUrl: string, name: string) {
   };
 }
 
-export function connectSocket(baseUrl: string, token?: string): ClientSocket {
-  return connectClient(baseUrl, {
-    auth: token ? { token } : {},
-    transports: ['websocket'],
-    forceNew: true,
-    reconnection: false,
-  });
+/* ---------- realtime (Ably) ---------- */
+
+/** Events published to this user's channel so far (tests keep them in memory). */
+export function eventsFor<E extends RealtimeEventName>(userId: string, name?: E): PublishedEvent<E>[] {
+  return testRealtimeOutbox.filter(
+    (event) => event.channels.includes(userChannel(userId)) && (!name || event.name === name),
+  ) as PublishedEvent<E>[];
 }
 
-/** Connect and wait until the server has finished setting up the socket. */
-export async function connectReady(baseUrl: string, token: string): Promise<ClientSocket> {
-  const socket = connectSocket(baseUrl, token);
-  await new Promise<void>((resolve, reject) => {
-    socket.once('presence:snapshot', () => resolve());
-    socket.once('connect_error', reject);
-  });
-  return socket;
+/** Payload of the last `name` event published to this user's channel. */
+export function lastEventFor<E extends RealtimeEventName>(userId: string, name: E): PublishedEvent<E>['data'] {
+  const event = eventsFor(userId, name).at(-1);
+  if (!event) throw new Error(`No "${name}" event was published to user ${userId}`);
+  return event.data;
 }
 
-type EventPayload<E extends keyof ServerToClientEvents> = Parameters<ServerToClientEvents[E]>[0];
-
-export function nextEvent<E extends keyof ServerToClientEvents>(
-  socket: ClientSocket,
-  event: E,
-  timeoutMs = 3_000,
-): Promise<EventPayload<E>> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Timed out waiting for "${event}"`)), timeoutMs);
-    (socket as unknown as Socket).once(event as string, (payload: EventPayload<E>) => {
-      clearTimeout(timer);
-      resolve(payload);
-    });
-  });
-}
-
-/** Resolves true if the event does NOT arrive within `ms`. */
-export function noEvent(socket: ClientSocket, event: keyof ServerToClientEvents, ms = 300): Promise<boolean> {
-  return new Promise((resolve) => {
-    const onEvent = () => {
-      clearTimeout(timer);
-      resolve(false);
-    };
-    const timer = setTimeout(() => {
-      (socket as unknown as Socket).off(event, onEvent);
-      resolve(true);
-    }, ms);
-    (socket as unknown as Socket).once(event, onEvent);
-  });
-}
+/** Count events now, to check later that nothing new was published. */
+export const outboxSize = () => testRealtimeOutbox.length;

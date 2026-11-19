@@ -3,6 +3,7 @@ import type { RequestHandler } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { isProd, isTest } from '../config/env';
 import { HttpError } from '../lib/http-error';
+import { getAuth } from './require-auth';
 
 const rateLimited = () =>
   new HttpError(429, ERROR_CODES.RATE_LIMITED, 'Too many attempts. Please wait a few minutes and try again.');
@@ -39,6 +40,24 @@ export const inviteRateLimit = rateLimit({
   skip: () => isTest,
   handler: (_req, _res, next) => next(rateLimited()),
 });
+
+/**
+ * Per signed-in user (not per IP): bursts are fine, floods are not.
+ * Kept in memory, so on serverless each instance counts on its own.
+ */
+const perUser = (limit: number, message: string) =>
+  rateLimit({
+    windowMs: 10 * 1000,
+    limit,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    skip: () => isTest,
+    keyGenerator: (req) => getAuth(req).userId,
+    handler: (_req, _res, next) => next(new HttpError(429, ERROR_CODES.RATE_LIMITED, message)),
+  });
+
+export const messageRateLimit = perUser(30, 'You are sending messages too fast');
+export const typingRateLimit = perUser(20, 'Too many typing updates');
 
 export const refreshRateLimit = rateLimit({
   windowMs: 60 * 1000,

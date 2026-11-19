@@ -2,19 +2,19 @@ import { env } from './config/env';
 import { connectDatabase, disconnectDatabase } from './db/connect';
 import { logger } from './lib/logger';
 import { createServer } from './server';
-import { flushPendingWrites } from './socket';
 
 await connectDatabase();
 
-const { httpServer, io } = createServer();
+const { httpServer } = createServer();
 
 httpServer.listen(env.PORT, () => {
-  logger.info(`API + Socket.io listening on http://localhost:${env.PORT}`);
+  logger.info(`API listening on http://localhost:${env.PORT}`);
+  if (!env.ABLY_API_KEY) logger.warn('ABLY_API_KEY is not set: nothing will be pushed live');
 });
 
 let shuttingDown = false;
 
-/** Stop taking new connections, close sockets and the DB, then exit. */
+/** Stop taking new requests, close the DB, then exit. */
 async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -23,8 +23,7 @@ async function shutdown(signal: string) {
   // If something hangs, exit anyway after 10 seconds.
   setTimeout(() => process.exit(1), 10_000).unref();
 
-  await io.close(); // disconnects every socket and closes the HTTP server
-  await flushPendingWrites(); // let "last seen" saves from those disconnects finish
+  await new Promise<void>((resolve) => httpServer.close(() => resolve()));
   await disconnectDatabase();
   process.exit(0);
 }

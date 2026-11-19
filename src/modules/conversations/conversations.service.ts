@@ -32,12 +32,6 @@ async function findPopulated(filter: Record<string, unknown>) {
   return doc as unknown as PopulatedConversation | null;
 }
 
-/** Ids of every conversation the user is in (used to join socket rooms). */
-export async function listConversationIdsForUser(userId: string): Promise<string[]> {
-  const docs = await ConversationModel.find({ 'members.user': userId }, { _id: 1 }).lean();
-  return docs.map((doc) => doc._id.toString());
-}
-
 export async function listConversations(userId: string): Promise<Conversation[]> {
   const docs = (await ConversationModel.find({ 'members.user': userId })
     .sort({ lastMessageAt: -1 })
@@ -54,6 +48,15 @@ export async function getConversation(conversationId: string, userId: string): P
   const doc = await findPopulated(memberFilter(conversationId, userId));
   if (!doc) throw notFoundError();
   return toConversation(doc, await countUnread(doc, userId));
+}
+
+/** Member ids of a chat, if `userId` is one of them (404 otherwise). */
+export async function memberIdsFor(conversationId: string, userId: string): Promise<string[]> {
+  const doc = await ConversationModel.findOne(memberFilter(conversationId, userId))
+    .select('members.user')
+    .lean<{ members: { user: Types.ObjectId }[] }>();
+  if (!doc) throw notFoundError();
+  return doc.members.map((member) => member.user.toString());
 }
 
 export async function assertMember(conversationId: string, userId: string): Promise<void> {
