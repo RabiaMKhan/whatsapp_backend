@@ -7,7 +7,7 @@ import {
   type RealtimeEvents,
   type TypingPayload,
 } from '@chat/shared';
-import Ably from 'ably';
+import { createHttpClient } from '@ably/pubsub-server';
 import { env, isTest } from '../config/env';
 import { logger } from '../lib/logger';
 import { Conversation as ConversationModel } from '../models/conversation.model';
@@ -29,7 +29,9 @@ import { Conversation as ConversationModel } from '../models/conversation.model'
  *  - Development without a key → logged and skipped (REST still works).
  */
 
-const rest = env.ABLY_API_KEY ? new Ably.Rest({ key: env.ABLY_API_KEY }) : null;
+// @ably/pubsub-server (not the old `ably` package): accounts on Ably's MAU pricing
+// reject the old SDK, and a server client's traffic is exempt from MAU counting.
+const rest = env.ABLY_API_KEY ? createHttpClient({ key: env.ABLY_API_KEY }) : null;
 
 /** The Ably client for routes that need it (token requests). null without a key. */
 export const ablyRest = rest;
