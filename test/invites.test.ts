@@ -1,7 +1,7 @@
 import { INVITE, type ConversationsResponse, type CreateInviteResponse, type InvitesResponse } from '@chat/shared';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { connectReady, emailsTo, lastCodeFor, lastEmailTo, nextEvent, registerUser, startTestServer, uniqueEmail } from './helpers';
+import { emailsTo, lastCodeFor, lastEmailTo, lastEventFor, registerUser, startTestServer, uniqueEmail } from './helpers';
 
 let server: Awaited<ReturnType<typeof startTestServer>>;
 let baseUrl: string;
@@ -119,30 +119,24 @@ describe('invites', () => {
     const email = uniqueEmail('Newbie');
     await invite(alice.auth, email).expect(201);
 
-    const aliceSocket = await connectReady(baseUrl, alice.token);
-    try {
-      const chatCreated = nextEvent(aliceSocket, 'conversation:new');
+    // The invited person signs up with the invited address and verifies it.
+    await request(baseUrl).post('/api/auth/register').send({ name: 'Newbie', email, password: 'test-password-123' }).expect(201);
+    const verified = await request(baseUrl).post('/api/auth/verify-email').send({ email, code: lastCodeFor(email) }).expect(200);
 
-      // The invited person signs up with the invited address and verifies it.
-      await request(baseUrl).post('/api/auth/register').send({ name: 'Newbie', email, password: 'test-password-123' }).expect(201);
-      const verified = await request(baseUrl).post('/api/auth/verify-email').send({ email, code: lastCodeFor(email) }).expect(200);
+    // Alice gets the new chat live.
+    const conversation = lastEventFor(alice.user.id, 'conversation:new');
+    expect(conversation.type).toBe('direct');
+    expect(conversation.members.map((m) => m.user.email).sort()).toEqual([alice.email, email].sort());
 
-      const conversation = await chatCreated;
-      expect(conversation.type).toBe('direct');
-      expect(conversation.members.map((m) => m.user.email).sort()).toEqual([alice.email, email].sort());
+    const theirChats = await request(baseUrl)
+      .get('/api/conversations')
+      .set({ Authorization: `Bearer ${verified.body.accessToken}` })
+      .expect(200);
+    expect((theirChats.body as ConversationsResponse).conversations.map((c) => c.id)).toEqual([conversation.id]);
 
-      const theirChats = await request(baseUrl)
-        .get('/api/conversations')
-        .set({ Authorization: `Bearer ${verified.body.accessToken}` })
-        .expect(200);
-      expect((theirChats.body as ConversationsResponse).conversations.map((c) => c.id)).toEqual([conversation.id]);
-
-      const list = await request(baseUrl).get('/api/invites').set(alice.auth).expect(200);
-      expect((list.body as InvitesResponse).invites[0]).toEqual(
-        expect.objectContaining({ email, status: 'joined', joinedAt: expect.any(String) }),
-      );
-    } finally {
-      aliceSocket.disconnect();
-    }
+    const list = await request(baseUrl).get('/api/invites').set(alice.auth).expect(200);
+    expect((list.body as InvitesResponse).invites[0]).toEqual(
+      expect.objectContaining({ email, status: 'joined', joinedAt: expect.any(String) }),
+    );
   });
 });

@@ -45,7 +45,16 @@ const envSchema = z.object({
   SMTP_USER: optionalString,
   SMTP_PASS: optionalString,
   EMAIL_FROM: z.string().default('Relay <no-reply@relay.local>'),
-}).refine((value) => value.NODE_ENV !== 'production' || Boolean(value.SMTP_HOST), {
+
+  // Real-time updates (Ably). Without a key, development still works but
+  // nothing is pushed live; production refuses to start without it.
+  ABLY_API_KEY: optionalString,
+})
+  .refine((value) => value.NODE_ENV !== 'production' || Boolean(value.ABLY_API_KEY), {
+    message: 'ABLY_API_KEY is required in production (real-time updates)',
+    path: ['ABLY_API_KEY'],
+  })
+  .refine((value) => value.NODE_ENV !== 'production' || Boolean(value.SMTP_HOST), {
   message: 'SMTP_HOST is required in production (verification emails must be sent)',
   path: ['SMTP_HOST'],
 });

@@ -13,6 +13,8 @@ export default defineConfig({
       MONGODB_URI: 'mongodb://127.0.0.1:27017/chat_app_test',
       JWT_ACCESS_SECRET: 'test-only-secret-at-least-32-characters-long',
       CLIENT_ORIGINS: 'http://localhost:3005',
+      // Fake key in Ably's format: token requests are signed locally, nothing is sent to Ably.
+      ABLY_API_KEY: 'testapp.testkey:not-a-real-secret',
     },
   },
 });

@@ -1,14 +1,14 @@
 import { createServer as createHttpServer } from 'node:http';
 import { createApp } from './app';
-import { createSocketServer } from './socket';
 
 /**
- * Express and Socket.io share ONE HTTP server (and port). Socket.io handles
- * requests to /socket.io/*, Express handles everything else.
+ * A plain HTTP server around the Express app, for local development and
+ * tests. Real-time updates go through Ably (see realtime/publisher.ts), so
+ * there is no socket server to attach. On Vercel, src/vercel.ts is used
+ * instead.
  */
 export function createServer() {
   const app = createApp();
   const httpServer = createHttpServer(app);
-  const io = createSocketServer(httpServer);
-  return { app, httpServer, io };
+  return { app, httpServer };
 }
